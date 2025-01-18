@@ -1,6 +1,10 @@
 import socket
 import tkinter as tk
 from tkinter import scrolledtext
+import threading
+
+from duplicity.asyncscheduler import thread
+from pydantic.dataclasses import dataclass
 
 HOST = "127.0.0.1"
 PORT = 1100  
@@ -19,7 +23,7 @@ class SocketClientApp:
         self.entry_field = tk.Entry(self.root, width=40)
         self.entry_field.pack(padx=10, pady=10)
         self.entry_field.bind("<Return>", self.send_message)
-        self.entry_field.config(state=tk.DISABLED)  
+        self.entry_field.config(state=tk.DISABLED)
         
         self.connect_button = tk.Button(self.root, text="Connect", command=self.connect_to_server)
         self.connect_button.pack(pady=5)
@@ -50,6 +54,8 @@ class SocketClientApp:
         try:
             self.socket.connect((HOST, PORT))
             self.append_to_chat("connected to server at {}:{}".format(HOST, PORT))
+
+            threading.Thread(target=self.receive_message, daemon=True).start()
         except Exception as e:
             self.append_to_chat("error connecting to server: " + str(e))
 
@@ -94,15 +100,25 @@ class SocketClientApp:
         if self.socket and self.logged_in:
             try:
                 self.socket.send(bytes(msg, "utf-8"))
-                data = self.socket.recv(1024)
-                self.append_to_chat("[you]: " + msg)
-                self.append_to_chat("[server]: " + data.decode("utf-8"))
+                # data = self.socket.recv(1024)
+                # self.append_to_chat("[you]: " + msg)
+                # self.append_to_chat("[server]: " + data.decode("utf-8"))
             except Exception as e:
                 self.append_to_chat("error: " + str(e))
         else:
             self.append_to_chat("you need to log in before sending messages!")
 
         self.entry_field.delete(0, tk.END)
+
+    def receive_message(self):
+        while True:
+            try:
+                data = self.socket.recv(1024).decode("utf-8")
+                if data:
+                    self.root.after(0, self.append_to_chat(data))
+            except Exception as e:
+                self.append_to_chat("error: " + str(e))
+                break
 
     def toggle_login_register_controls(self, enable):
         if enable:

@@ -9,6 +9,8 @@
 #include <pthread.h>
 #include <sqlite3.h>
 
+#define MAX_CLIENTS 100
+
 char client_message[2000];
 char buffer[1024];
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
@@ -21,6 +23,8 @@ typedef struct {
     int logged_in;
     char login[100];
 } ClientData;
+
+ClientData clientTable[MAX_CLIENTS];
 
 int login_exists(const char *login) {
     sqlite3_stmt *stmt;
@@ -72,6 +76,36 @@ int validate_login(const char *login, const char *password) {
     return 0;  
 }
 
+int findEmptyClientSlot() {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clientTable[i].socket == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int clearClientSlot(int clientSocket) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clientTable[i].socket == clientSocket) {
+            clientTable[i].socket = 0;
+            clientTable[i].logged_in = 0;
+            memset(clientTable[i].login, 0, sizeof(clientTable[i].login));
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void sendMessageToAllClients(const char *message, ClientData *sender) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clientTable[i].socket != 0) {
+            printf("[send to client on slot %d on socket %d]: %s\n",i, clientTable[i].socket, message);
+            send(clientTable[i].socket, message, strlen(message), 0);
+        }
+    }
+}
+
 void *socketThread(void *arg) {
     ClientData *client = (ClientData *)arg;
     int n;
@@ -83,6 +117,7 @@ void *socketThread(void *arg) {
     while (1) {
         n = recv(client->socket, client_message, 2000, 0);
         if (n < 1) {
+            printf("[client logged out]\n");
             break;
         }
 
@@ -118,9 +153,20 @@ void *socketThread(void *arg) {
 
             if (login && password) {
                 if (validate_login(login, password)) {
-                    client->logged_in = 1;
-                    strncpy(client->login, login, sizeof(client->login) - 1);
-                    send(client->socket, "login successful. you can now send messages.", 43, 0);
+                    
+                    int clientSlot = findEmptyClientSlot();
+                    if (findEmptyClientSlot() >= 0) {
+                        client->logged_in = 1;
+                        strncpy(client->login, login, sizeof(client->login) - 1);
+                        send(client->socket, "login successful. you can now send messages.", 43, 0);
+
+
+                        clientTable[clientSlot] = *client;
+                    }
+                    else {
+                        send(client->socket, "reached maximum number of users", 32, 0);
+                    }
+                    
                 } else {
                     send(client->socket, "invalid login/password.", 27, 0);
                 }
@@ -129,7 +175,7 @@ void *socketThread(void *arg) {
             }
         }
         else if (client->logged_in) {
-            send(client->socket, "--send and received--\n", 25, 0); 
+            sendMessageToAllClients(client_message, client);
         } else {
             send(client->socket, "you must log in first!", 22, 0);
         }
@@ -140,6 +186,8 @@ void *socketThread(void *arg) {
     pthread_mutex_lock(&lock);
     readThreadComplete = 1;
     pthread_mutex_unlock(&lock);
+
+    clearClientSlot(client->socket);
     close(client->socket);
     free(client);
     pthread_exit(NULL);
@@ -173,10 +221,13 @@ int main() {
         perror("Socket creation failed");
         return 1;
     }
+
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_port = htons(1100);
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
     memset(serverAddr.sin_zero, '\0', sizeof serverAddr.sin_zero);
+
     rc = bind(serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr));
     if (rc < 0) {
         perror("Bind failed");
