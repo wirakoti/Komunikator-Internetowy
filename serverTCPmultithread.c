@@ -49,6 +49,53 @@ int login_exists(const char *login) {
     return exists;
 }
 
+int chatroom_exists(const char *chatName) {
+    sqlite3_stmt *stmt;
+    const char *sql = "SELECT id FROM chatrooms WHERE chatroom = ?;";
+    int rc;
+    int exists = 0;
+
+    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare statement chatrooms: %s\n", sqlite3_errmsg(db));
+        return 0;
+    }
+
+    sqlite3_bind_text(stmt, 1, chatName, -1, SQLITE_STATIC);
+
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        exists = 1;  //chatroom exists
+    }
+
+    sqlite3_finalize(stmt);
+    return exists;
+}
+
+int user_chatroom_exists(const char *login, const char *chatName) {
+    sqlite3_stmt *stmt;
+    const char *sql = "SELECT 1 FROM user_chatrooms WHERE user = ? AND chatroom = ? ;";
+    int rc;
+    int exists = 0;
+
+    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "Failed to prepare statement user_chatrooms: %s\n", sqlite3_errmsg(db));
+        return 0;
+    }
+
+    sqlite3_bind_text(stmt, 1, login, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, chatName, -1, SQLITE_STATIC);
+
+    rc = sqlite3_step(stmt);
+    if (rc == SQLITE_ROW) {
+        exists = 1;  //chatroom exists
+    }
+
+    sqlite3_finalize(stmt);
+    return exists;
+}
+
 int validate_login(const char *login, const char *password) {
     sqlite3_stmt *stmt;
     const char *sql = "SELECT password FROM users WHERE login = ?;";
@@ -97,13 +144,31 @@ int clearClientSlot(int clientSocket) {
     return 0;
 }
 
-void sendMessageToAllClients(const char *message, ClientData *sender) {
+void sendMessageToAllClients(char *message, ClientData *client) {
+    // ME WHEN STRINGS .___________________________.
+    int bufferSize = strlen(message) + strlen(client->login) + 2;
+
+    // because strtok destroys the string...
+    char *messagecopy = (char *)malloc(strlen(message));
+    memset(messagecopy, 0, strlen(message));
+
+    strncpy(messagecopy, message, strlen(message));
+
+    char *room = strtok(message, " ");
+    
+    char *formattedMsg = (char *)malloc(bufferSize);
+    memset(formattedMsg, 0, bufferSize);
+
+    snprintf(formattedMsg, bufferSize, "%s %s", client->login, messagecopy);
+    printf("MESSAGE: %s\n", formattedMsg);
+    
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clientTable[i].socket != 0) {
-            printf("[send to client on slot %d on socket %d]: %s\n",i, clientTable[i].socket, message);
-            send(clientTable[i].socket, message, strlen(message), 0);
+        if (clientTable[i].socket != 0 && user_chatroom_exists(clientTable[i].login, room)) {
+            printf("[send to client on slot %d on socket %d]: %s\n",i, clientTable[i].socket, formattedMsg);
+            send(clientTable[i].socket, formattedMsg, strlen(formattedMsg), 0);  // format: LOGIN CHATROOM MESSAGE
         }
     }
+    free(formattedMsg);
 }
 
 void *socketThread(void *arg) {
@@ -112,6 +177,7 @@ void *socketThread(void *arg) {
     char *login;
     char *password;
     char *errMsg = 0;
+    char *chatroom_name;
     int rc;
 
     while (1) {
@@ -158,6 +224,7 @@ void *socketThread(void *arg) {
                     if (findEmptyClientSlot() >= 0) {
                         client->logged_in = 1;
                         strncpy(client->login, login, sizeof(client->login) - 1);
+                        // TODO: also send the chat rooms user is in
                         send(client->socket, "login successful. you can now send messages.", 43, 0);
 
 
@@ -174,6 +241,35 @@ void *socketThread(void *arg) {
                 send(client->socket, "error", 20, 0);
             }
         }
+        else if (strncmp(client_message, "JOIN", 4) == 0) {
+            chatroom_name = strtok(client_message + 5, " ");
+
+            if (!chatroom_exists(chatroom_name)) {
+                char sql[200];
+                snprintf(sql, sizeof(sql), "INSERT INTO chatrooms (chatroom) VALUES ('%s');", chatroom_name);
+
+                rc = sqlite3_exec(db, sql, 0, 0, &errMsg);
+                if (rc != SQLITE_OK) {
+                    fprintf(stderr, "SQL error: %s\n", errMsg);
+                    sqlite3_free(errMsg);
+                }
+            }
+
+            if(!user_chatroom_exists(client->login, chatroom_name)) {
+                char sql[200];
+                snprintf(sql, sizeof(sql), "INSERT INTO user_chatrooms (user, chatroom) VALUES ('%s', '%s');", client->login, chatroom_name);
+                rc = sqlite3_exec(db, sql, 0, 0, &errMsg);
+                if (rc != SQLITE_OK) {
+                    fprintf(stderr, "SQL error: %s\n", errMsg);
+                    sqlite3_free(errMsg);
+                }
+
+            }
+
+            // send(client->socket, "SERVER Joined new room!", 24, 0);
+
+        }
+        
         else if (client->logged_in) {
             sendMessageToAllClients(client_message, client);
         } else {
@@ -208,6 +304,26 @@ int main() {
     }
 
     char *sql = "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT, password TEXT);";
+    rc = sqlite3_exec(db, sql, 0, 0, &errMsg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        sqlite3_close(db);
+        return 1;
+    }
+
+    sql = "CREATE TABLE IF NOT EXISTS chatrooms (id INTEGER PRIMARY KEY AUTOINCREMENT, chatroom TEXT);";
+    rc = sqlite3_exec(db, sql, 0, 0, &errMsg);
+    if (rc != SQLITE_OK) {
+        fprintf(stderr, "SQL error: %s\n", errMsg);
+        sqlite3_free(errMsg);
+        sqlite3_close(db);
+        return 1;
+    }
+
+    sql = "CREATE TABLE IF NOT EXISTS user_chatrooms (id INTEGER PRIMARY KEY AUTOINCREMENT, user TEXT, chatroom TEXT,"
+                                                            "FOREIGN KEY (user) REFERENCES users(login),"
+                                                            "FOREIGN KEY (chatroom) REFERENCES chatrooms(chatroom));";
     rc = sqlite3_exec(db, sql, 0, 0, &errMsg);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "SQL error: %s\n", errMsg);
