@@ -89,6 +89,7 @@ class SocketClientApp:
         login = self.login_field.get().strip()
         password = self.password_field.get().strip()
 
+        # TODO: don't let user send login or password containing more than 1 word
         if login and password:
             message = f"LOGIN {login} {password}"
             self.socket.send(message.encode('utf-8'))
@@ -116,7 +117,7 @@ class SocketClientApp:
             return
         if self.socket and self.logged_in:
             try:
-                msg = self.current_chat + " " + msg
+                msg = f"{self.current_chat} {msg}"
                 self.socket.send(bytes(msg, "utf-8"))
             except Exception as e:
                 self.append_to_chat("error: " + str(e))
@@ -130,8 +131,9 @@ class SocketClientApp:
             try:
                 data = self.socket.recv(1024).decode("utf-8")
                 if data:
-                    chat_name = data.split()[0]
-                    self.root.after(0, self.append_to_chat(data, chat_name))
+                    sender, chat_name, message = data.split(maxsplit=2)
+                    fmsg = f"[{sender}]: {message}"
+                    self.root.after(0, self.append_to_chat(fmsg, chat_name))
             except Exception as e:
                 self.append_to_chat("error: " + str(e))
                 break
@@ -168,6 +170,9 @@ class SocketClientApp:
 
             new_chat_button = tk.Button(self.top_frame, text=chat_name, command=lambda: self.toggle_chats(chat_name))
             new_chat_button.pack(side=tk.LEFT)
+
+            msg = f"JOIN {chat_name}"
+            self.socket.send(bytes(msg, "utf-8"))
 
     def append_to_chat(self, text, chat_name = "SERVER"):
         chat_display = self.chat_frames[chat_name]
