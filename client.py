@@ -1,6 +1,6 @@
 import socket
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import scrolledtext, simpledialog, Frame
 import threading
 
 from duplicity.asyncscheduler import thread
@@ -14,10 +14,25 @@ class SocketClientApp:
         self.root = root
         self.root.title("Socket Client")
 
-        # chat
-        self.chat_display = scrolledtext.ScrolledText(self.root, height=20, width=50, wrap=tk.WORD)
-        self.chat_display.pack(padx=10, pady=10)
-        self.chat_display.config(state=tk.DISABLED)
+        # buttons for chats
+        self.chat_frames = {}
+        self.current_chat = None
+
+        self.top_frame = tk.Frame(self.root)
+        self.top_frame.pack(side=tk.TOP)
+
+        self.chat_button_1 = tk.Button(self.top_frame, text="SERVER", command=lambda: self.toggle_chats("SERVER"))
+        self.chat_button_1.pack(side=tk.LEFT)
+
+        self.chat_button_2 = tk.Button(self.top_frame, text="+", command=self.create_new_chat)
+        self.chat_button_2.pack(side=tk.RIGHT)
+        self.chat_button_2.config(state=tk.DISABLED)
+
+
+        self.chat_frame = tk.Frame(self.root)
+        self.chat_frame.pack(side=tk.TOP)
+
+        self.toggle_chats("SERVER")
 
         # message entry
         self.entry_field = tk.Entry(self.root, width=40)
@@ -85,6 +100,7 @@ class SocketClientApp:
                 self.logged_in = True
                 self.toggle_login_register_controls(False)  
                 self.entry_field.config(state=tk.NORMAL)
+                self.chat_button_2.config(state=tk.NORMAL)
                 threading.Thread(target=self.receive_message, daemon=True).start()
 
         else:
@@ -100,10 +116,8 @@ class SocketClientApp:
             return
         if self.socket and self.logged_in:
             try:
+                msg = self.current_chat + " " + msg
                 self.socket.send(bytes(msg, "utf-8"))
-                # data = self.socket.recv(1024)
-                # self.append_to_chat("[you]: " + msg)
-                # self.append_to_chat("[server]: " + data.decode("utf-8"))
             except Exception as e:
                 self.append_to_chat("error: " + str(e))
         else:
@@ -116,7 +130,8 @@ class SocketClientApp:
             try:
                 data = self.socket.recv(1024).decode("utf-8")
                 if data:
-                    self.root.after(0, self.append_to_chat(data))
+                    chat_name = data.split()[0]
+                    self.root.after(0, self.append_to_chat(data, chat_name))
             except Exception as e:
                 self.append_to_chat("error: " + str(e))
                 break
@@ -129,11 +144,37 @@ class SocketClientApp:
             self.register_button.pack_forget()
             self.login_button.pack_forget()
 
-    def append_to_chat(self, text):
-        self.chat_display.config(state=tk.NORMAL)
-        self.chat_display.insert(tk.END, text + "\n")
-        self.chat_display.yview(tk.END)  # scroll
-        self.chat_display.config(state=tk.DISABLED)
+    def toggle_chats(self, name):
+        if name not in self.chat_frames:
+            frame = scrolledtext.ScrolledText(self.chat_frame, height=20, width=50, wrap=tk.WORD)
+            frame.pack(padx=10, pady=0)
+            frame.config(state=tk.DISABLED)
+            self.chat_frames[name] = frame
+
+        self.show_chat(name)
+
+    def show_chat(self, chat_name):
+        if self.current_chat:
+            self.chat_frames[self.current_chat].pack_forget()
+
+        self.chat_frames[chat_name].pack(padx=10, pady=0)
+
+        self.current_chat = chat_name
+
+    def create_new_chat(self):
+        chat_name = simpledialog.askstring("New chat", "Enter the name for the new chat: ")
+        if chat_name:
+            self.toggle_chats(chat_name)
+
+            new_chat_button = tk.Button(self.top_frame, text=chat_name, command=lambda: self.toggle_chats(chat_name))
+            new_chat_button.pack(side=tk.LEFT)
+
+    def append_to_chat(self, text, chat_name = "SERVER"):
+        chat_display = self.chat_frames[chat_name]
+        chat_display.config(state=tk.NORMAL)
+        chat_display.insert(tk.END, text + "\n")
+        chat_display.yview(tk.END)  # scroll
+        chat_display.config(state=tk.DISABLED)
 
     def exit_app(self):
         self.append_to_chat("Connection closed!")
