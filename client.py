@@ -55,7 +55,6 @@ class SocketClientApp:
             self.socket.connect((HOST, PORT))
             self.append_to_chat("connected to server at {}:{}".format(HOST, PORT))
 
-            threading.Thread(target=self.receive_message, daemon=True).start()
         except Exception as e:
             self.append_to_chat("error connecting to server: " + str(e))
 
@@ -85,7 +84,9 @@ class SocketClientApp:
             if "successful" in response:
                 self.logged_in = True
                 self.toggle_login_register_controls(False)  
-                self.entry_field.config(state=tk.NORMAL)  
+                self.entry_field.config(state=tk.NORMAL)
+                threading.Thread(target=self.receive_message, daemon=True).start()
+
         else:
             self.append_to_chat("Please enter a username and password.")
 
