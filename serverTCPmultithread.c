@@ -74,7 +74,7 @@ int chatroom_exists(const char *chatName) {
 
 int user_chatroom_exists(const char *login, const char *chatName) {
     sqlite3_stmt *stmt;
-    const char *sql = "SELECT 1 FROM user_chatrooms WHERE login = ? AND chatroom = ? ;";
+    const char *sql = "SELECT 1 FROM user_chatrooms WHERE user = ? AND chatroom = ? ;";
     int rc;
     int exists = 0;
 
@@ -145,15 +145,25 @@ int clearClientSlot(int clientSocket) {
 }
 
 void sendMessageToAllClients(char *message, ClientData *client) {
-    // char *room = strtok(message, " ");
+    // ME WHEN STRINGS .___________________________.
     int bufferSize = strlen(message) + strlen(client->login) + 2;
+
+    // because strtok destroys the string...
+    char *messagecopy = (char *)malloc(strlen(message));
+    memset(messagecopy, 0, strlen(message));
+
+    strncpy(messagecopy, message, strlen(message));
+
+    char *room = strtok(message, " ");
+    
     char *formattedMsg = (char *)malloc(bufferSize);
     memset(formattedMsg, 0, bufferSize);
 
-    snprintf(formattedMsg, bufferSize, "%s %s", client->login, message);
+    snprintf(formattedMsg, bufferSize, "%s %s", client->login, messagecopy);
+    printf("MESSAGE: %s\n", formattedMsg);
     
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clientTable[i].socket != 0) {
+        if (clientTable[i].socket != 0 && user_chatroom_exists(clientTable[i].login, room)) {
             printf("[send to client on slot %d on socket %d]: %s\n",i, clientTable[i].socket, formattedMsg);
             send(clientTable[i].socket, formattedMsg, strlen(formattedMsg), 0);  // format: LOGIN CHATROOM MESSAGE
         }
