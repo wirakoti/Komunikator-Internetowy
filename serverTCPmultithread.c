@@ -155,13 +155,13 @@ void sendMessageToAllClients(char *message, ClientData *client) {
     strncpy(messagecopy, message, strlen(message));
 
     char *room = strtok(message, " ");
-    
+   
     char *formattedMsg = (char *)malloc(bufferSize);
     memset(formattedMsg, 0, bufferSize);
 
     snprintf(formattedMsg, bufferSize, "%s %s", client->login, messagecopy);
     printf("MESSAGE: %s\n", formattedMsg);
-    
+   
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (clientTable[i].socket != 0 && user_chatroom_exists(clientTable[i].login, room)) {
             printf("[send to client on slot %d on socket %d]: %s\n",i, clientTable[i].socket, formattedMsg);
@@ -212,35 +212,50 @@ void *socketThread(void *arg) {
             } else {
                 send(client->socket, "invalid data.", 26, 0);
             }
-        } 
+        }
         else if (strncmp(client_message, "LOGIN", 5) == 0) {
-            login = strtok(client_message + 6, " "); 
-            password = strtok(NULL, " "); 
+            login = strtok(client_message + 6, " ");
+            password = strtok(NULL, " ");
 
             if (login && password) {
                 if (validate_login(login, password)) {
-                    
+                   
                     int clientSlot = findEmptyClientSlot();
-                    if (findEmptyClientSlot() >= 0) {
-                        client->logged_in = 1;
-                        strncpy(client->login, login, sizeof(client->login) - 1);
-                        // TODO: also send the chat rooms user is in
-                        send(client->socket, "login successful. you can now send messages.", 43, 0);
+                    if (clientSlot >= 0) {
+                client->logged_in = 1;
+                strncpy(client->login, login, sizeof(client->login) - 1);
 
+                clientTable[clientSlot] = *client;
 
-                        clientTable[clientSlot] = *client;
+                // chatrooms user already has
+                sqlite3_stmt *stmt;
+                const char *sql = "SELECT chatroom FROM user_chatrooms WHERE user = ?;";
+                rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+                if (rc == SQLITE_OK) {
+                    sqlite3_bind_text(stmt, 1, login, -1, SQLITE_STATIC);
+
+                    char chatrooms[1024] = "login successful:";
+                    while (sqlite3_step(stmt) == SQLITE_ROW) {
+                        const char *chatroom = (const char *)sqlite3_column_text(stmt, 0);
+                        strcat(chatrooms, " ");
+                        strcat(chatrooms, chatroom);
                     }
-                    else {
-                        send(client->socket, "reached maximum number of users", 32, 0);
-                    }
-                    
+                    sqlite3_finalize(stmt);
+
+                    send(client->socket, chatrooms, strlen(chatrooms), 0);
                 } else {
-                    send(client->socket, "invalid login/password.", 27, 0);
+                    send(client->socket, "error fetching chatrooms", 24, 0);
                 }
             } else {
-                send(client->socket, "error", 20, 0);
+                send(client->socket, "reached maximum number of users", 32, 0);
             }
+        } else {
+            send(client->socket, "invalid login/password.", 27, 0);
         }
+    } else {
+        send(client->socket, "error", 20, 0);
+    }
+}
         else if (strncmp(client_message, "JOIN", 4) == 0) {
             chatroom_name = strtok(client_message + 5, " ");
 
@@ -269,7 +284,18 @@ void *socketThread(void *arg) {
             // send(client->socket, "SERVER Joined new room!", 24, 0);
 
         }
-        
+
+        else if (strncmp(client_message, "GET_ACTIVE_USERS", 16) == 0) {
+            char activeUsers[1024] = "ACTIVE_USERS:";
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clientTable[i].socket != 0 && clientTable[i].logged_in) {
+                    strcat(activeUsers, " ");
+                    strcat(activeUsers, clientTable[i].login);
+                }
+            }
+            send(client->socket, activeUsers, strlen(activeUsers), 0);
+        }
+       
         else if (client->logged_in) {
             sendMessageToAllClients(client_message, client);
         } else {

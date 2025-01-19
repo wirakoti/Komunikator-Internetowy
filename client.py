@@ -28,9 +28,23 @@ class SocketClientApp:
         self.chat_button_2.pack(side=tk.RIGHT)
         self.chat_button_2.config(state=tk.DISABLED)
 
+        # for chat and active users to be next to each other
+        self.main_frame = tk.Frame(self.root)
+        self.main_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        self.chat_frame = tk.Frame(self.root)
-        self.chat_frame.pack(side=tk.TOP)
+        self.chat_frame = tk.Frame(self.main_frame)
+        self.chat_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+
+        self.active_users_frame = tk.Frame(self.main_frame)
+        self.active_users_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=10, pady=10)
+
+
+        self.active_users_label = tk.Label(self.active_users_frame, text="Active Users", font=("Arial", 12, "bold"))
+        self.active_users_label.pack()
+
+        self.active_users_listbox = tk.Listbox(self.active_users_frame, width=30, height=15)
+        self.active_users_listbox.pack()
 
         self.toggle_chats("SERVER")
 
@@ -39,9 +53,12 @@ class SocketClientApp:
         self.entry_field.pack(padx=10, pady=10)
         self.entry_field.bind("<Return>", self.send_message)
         self.entry_field.config(state=tk.DISABLED)
-        
+       
         self.connect_button = tk.Button(self.root, text="Connect", command=self.connect_to_server)
         self.connect_button.pack(pady=5)
+
+        self.active_users_button = tk.Button(self.root, text="Active Users", command=self.get_active_users)
+        self.active_users_button.pack(pady=5)
 
         self.register_button = tk.Button(self.root, text="Register", command=self.register_user)
         self.register_button.pack(pady=5)
@@ -89,7 +106,6 @@ class SocketClientApp:
         login = self.login_field.get().strip()
         password = self.password_field.get().strip()
 
-        # TODO: don't let user send login or password containing more than 1 word
         if login and password:
             message = f"LOGIN {login} {password}"
             self.socket.send(message.encode('utf-8'))
@@ -97,13 +113,28 @@ class SocketClientApp:
             response = data.decode('utf-8')
             self.append_to_chat(f"[server]: {response}")
 
-            if "successful" in response:
+            if response.startswith("login successful:"):
                 self.logged_in = True
-                self.toggle_login_register_controls(False)  
+                self.toggle_login_register_controls(False)
                 self.entry_field.config(state=tk.NORMAL)
                 self.chat_button_2.config(state=tk.NORMAL)
-                threading.Thread(target=self.receive_message, daemon=True).start()
+                self.login_field.pack_forget()
+                self.password_field.pack_forget()
 
+                chatrooms = response.split(":")[1].strip().split()
+                for chatroom in chatrooms:
+                    if chatroom not in self.chat_frames:
+                        self.toggle_chats(chatroom)
+
+                        chat_button = tk.Button(
+                            self.top_frame, text=chatroom,
+                            command=lambda cr=chatroom: self.toggle_chats(cr)
+                        )
+                        chat_button.pack(side=tk.LEFT)
+
+                threading.Thread(target=self.receive_message, daemon=True).start()
+            else:
+                self.append_to_chat("Login failed. Please check your credentials.")
         else:
             self.append_to_chat("Please enter a username and password.")
 
@@ -131,12 +162,42 @@ class SocketClientApp:
             try:
                 data = self.socket.recv(1024).decode("utf-8")
                 if data:
-                    sender, chat_name, message = data.split(maxsplit=2)
-                    fmsg = f"[{sender}]: {message}"
-                    self.root.after(0, self.append_to_chat(fmsg, chat_name))
+                    if data.startswith("ACTIVE_USERS:"):
+                        # for active users cause i cant......
+                        active_users = data[len("ACTIVE_USERS:"):].strip()
+                        self.root.after(0, lambda: self.show_active_users(active_users))
+                    else:
+                        # username chatname message
+                        parts = data.split(maxsplit=2)
+                        if len(parts) == 3:
+                            sender, chat_name, message = parts
+                            fmsg = f"[{sender}]: {message}"
+                            self.root.after(0, lambda: self.append_to_chat(fmsg, chat_name))
+                        else:
+                            self.root.after(0, lambda: self.append_to_chat(f"Invalid message received: {data}"))
             except Exception as e:
-                self.append_to_chat("error: " + str(e))
+                self.root.after(0, lambda: self.append_to_chat(f"Error receiving message: {str(e)}"))
                 break
+
+   
+    def get_active_users(self):
+        if self.socket:
+            threading.Thread(target=self.fetch_active_users, daemon=True).start()
+        else:
+            self.append_to_chat("You are not connected to the server.")
+
+    def fetch_active_users(self):
+        try:
+            self.socket.send("GET_ACTIVE_USERS".encode("utf-8"))
+        except Exception as e:
+            self.append_to_chat(f"Error retrieving active users: {str(e)}")
+
+   
+    def show_active_users(self, users):
+        self.active_users_listbox.delete(0, tk.END)  # clearing to refresh
+        active_users_list = users.split() 
+        for user in active_users_list:
+            self.active_users_listbox.insert(tk.END, user)
 
     def toggle_login_register_controls(self, enable):
         if enable:
