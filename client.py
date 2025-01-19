@@ -28,23 +28,34 @@ class SocketClientApp:
         self.chat_button_2.pack(side=tk.RIGHT)
         self.chat_button_2.config(state=tk.DISABLED)
 
-        # for chat and active users to be next to each other
+        # for chat + friends and active users to be next to each other
         self.main_frame = tk.Frame(self.root)
         self.main_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
 
         self.chat_frame = tk.Frame(self.main_frame)
         self.chat_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-
         self.active_users_frame = tk.Frame(self.main_frame)
         self.active_users_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=10, pady=10)
-
 
         self.active_users_label = tk.Label(self.active_users_frame, text="Active Users", font=("Arial", 12, "bold"))
         self.active_users_label.pack()
 
-        self.active_users_listbox = tk.Listbox(self.active_users_frame, width=30, height=15)
+        self.active_users_listbox = tk.Listbox(self.active_users_frame, width=30, height=10)
         self.active_users_listbox.pack()
+
+        self.button_show_friends = tk.Button(self.active_users_frame, text="Show Friends", command=self.show_friends)
+        self.button_show_friends.pack(pady=5)
+
+        self.friends_frame = tk.Frame(self.active_users_frame)
+        self.friends_frame.pack(side=tk.BOTTOM, fill=tk.Y, padx=10, pady=10)
+
+        self.friends_label = tk.Label(self.friends_frame, text="Friends", font=("Arial", 12, "bold"))
+        self.friends_label.pack()
+
+        self.friends_listbox = tk.Listbox(self.friends_frame, width=30, height=10)
+        self.friends_listbox.pack()
 
         self.toggle_chats("SERVER")
 
@@ -59,6 +70,13 @@ class SocketClientApp:
 
         self.active_users_button = tk.Button(self.root, text="Active Users", command=self.get_active_users)
         self.active_users_button.pack(pady=5)
+
+        self.friend_button = tk.Button(self.root, text="Add Friend", command=self.add_friend)
+        self.friend_button.pack(pady=5)
+
+        self.friend_field = tk.Entry(self.root, width=40)
+        self.friend_field.pack(padx=10, pady=5)
+        self.friend_field.insert(0, "Enter Friend Username")
 
         self.register_button = tk.Button(self.root, text="Register", command=self.register_user)
         self.register_button.pack(pady=5)
@@ -157,20 +175,62 @@ class SocketClientApp:
 
         self.entry_field.delete(0, tk.END)
 
+    def add_friend(self):
+        username1 = self.login_field.get().strip()  
+        username2 = self.friend_field.get().strip()  
+
+        if username2:  
+            if username1 == username2:  
+                self.append_to_chat("You cannot be your own friend...")
+                return
+
+            message = f"ADD_FRIEND {username2}"
+            try:
+                self.socket.send(message.encode('utf-8'))
+                #data = self.socket.recv(1024).decode('utf-8')
+                #self.append_to_chat(f"[server]: {data}")
+            except Exception as e:
+                self.append_to_chat(f"Error adding friend: {str(e)}")
+        else:
+            self.append_to_chat("Please enter a friend's username.")
+
+    def show_friends(self):
+        if self.socket:
+            threading.Thread(target=self.fetch_friends, daemon=True).start()
+        else:
+            self.append_to_chat("You are not connected to the server.")
+
+    def fetch_friends(self):
+        username = self.login_field.get().strip() 
+        try:
+            
+            mess = f"OK {username}"  
+            self.socket.send(mess.encode("utf-8"))
+        except Exception as e:
+            self.append_to_chat(f"Error retrieving friends: {str(e)}")
+
+    def get_friends(self, friends):
+        self.friends_listbox.delete(0, tk.END)  # clearing to refresh
+        friends_list = friends.split()
+        for friend in friends_list:
+            self.friends_listbox.insert(tk.END, friend)
+
     def receive_message(self):
         while True:
             try:
                 data = self.socket.recv(1024).decode("utf-8")
                 if data:
                     if data.startswith("ACTIVE_USERS:"):
-                        # for active users cause i cant......
                         active_users = data[len("ACTIVE_USERS:"):].strip()
                         self.root.after(0, lambda: self.show_active_users(active_users))
+                    elif data.startswith("FRIENDS_LIST:"):
+                        friends_list = data[len("FRIENDS_LIST:"):].strip()
+                        self.root.after(0, lambda: self.get_friends(friends_list))
                     else:
-                        # username chatname message
                         parts = data.split(maxsplit=2)
                         if len(parts) == 3:
                             sender, chat_name, message = parts
+                            # No extra MESSAGE line
                             fmsg = f"[{sender}]: {message}"
                             self.root.after(0, lambda: self.append_to_chat(fmsg, chat_name))
                         else:
@@ -178,6 +238,7 @@ class SocketClientApp:
             except Exception as e:
                 self.root.after(0, lambda: self.append_to_chat(f"Error receiving message: {str(e)}"))
                 break
+
 
    
     def get_active_users(self):
@@ -195,7 +256,7 @@ class SocketClientApp:
    
     def show_active_users(self, users):
         self.active_users_listbox.delete(0, tk.END)  # clearing to refresh
-        active_users_list = users.split() 
+        active_users_list = users.split()
         for user in active_users_list:
             self.active_users_listbox.insert(tk.END, user)
 
