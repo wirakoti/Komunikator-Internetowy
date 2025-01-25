@@ -14,29 +14,12 @@ class SocketClientApp:
         self.root = root
         self.root.title("Socket Client")
 
-        # buttons for chats
-        self.chat_frames = {}
-        self.current_chat = None
-
-        self.top_frame = tk.Frame(self.root)
-        self.top_frame.pack(side=tk.TOP)
-
-        self.chat_button_1 = tk.Button(self.top_frame, text="SERVER", command=lambda: self.toggle_chats("SERVER"))
-        self.chat_button_1.pack(side=tk.LEFT)
-
-        self.chat_button_2 = tk.Button(self.top_frame, text="+", command=self.create_new_chat)
-        self.chat_button_2.pack(side=tk.RIGHT)
-        self.chat_button_2.config(state=tk.DISABLED)
-
         # for chat + friends and active users to be next to each other
-        self.main_frame = tk.Frame(self.root)
-        self.main_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
+        self.left_frame = tk.Frame(self.root)
+        self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.chat_frame = tk.Frame(self.main_frame)
-        self.chat_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        self.active_users_frame = tk.Frame(self.main_frame)
+        self.active_users_frame = tk.Frame(self.root)
         self.active_users_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=10, pady=10)
 
         self.active_users_label = tk.Label(self.active_users_frame, text="Active Users", font=("Arial", 12, "bold"))
@@ -49,7 +32,7 @@ class SocketClientApp:
         self.button_show_friends.pack(pady=5)
 
         self.friends_frame = tk.Frame(self.active_users_frame)
-        self.friends_frame.pack(side=tk.BOTTOM, fill=tk.Y, padx=10, pady=10)
+        self.friends_frame.pack(fill=tk.Y, padx=10, pady=10)
 
         self.friends_label = tk.Label(self.friends_frame, text="Friends", font=("Arial", 12, "bold"))
         self.friends_label.pack()
@@ -57,60 +40,86 @@ class SocketClientApp:
         self.friends_listbox = tk.Listbox(self.friends_frame, width=30, height=10)
         self.friends_listbox.pack()
 
-        self.toggle_chats("SERVER")
-
-        # message entry
-        self.entry_field = tk.Entry(self.root, width=40)
-        self.entry_field.pack(padx=10, pady=10)
-        self.entry_field.bind("<Return>", self.send_message)
-        self.entry_field.config(state=tk.DISABLED)
-       
-        self.connect_button = tk.Button(self.root, text="Connect", command=self.connect_to_server)
-        self.connect_button.pack(pady=5)
-
-        self.active_users_button = tk.Button(self.root, text="Active Users", command=self.get_active_users)
+        self.active_users_button = tk.Button(self.active_users_frame, text="Active Users", command=self.get_active_users)
         self.active_users_button.pack(pady=5)
 
-        self.friend_button = tk.Button(self.root, text="Add Friend", command=self.add_friend)
+        self.friend_button = tk.Button(self.friends_frame, text="Add Friend", command=self.add_friend)
         self.friend_button.pack(pady=5)
 
-        self.friend_field = tk.Entry(self.root, width=40)
+        self.friend_field = tk.Entry(self.friends_frame, width=30)
         self.friend_field.pack(padx=10, pady=5)
         self.friend_field.insert(0, "Enter Friend Username")
 
-        self.register_button = tk.Button(self.root, text="Register", command=self.register_user)
+
+        # buttons for chats
+        self.chat_frames = {}
+        self.current_chat = None
+
+        self.button_frame = tk.Frame(self.left_frame)
+        self.button_frame.pack(side=tk.TOP)
+
+        self.chat_button_1 = tk.Button(self.button_frame, text="SERVER", command=lambda: self.toggle_chats("SERVER"))
+        self.chat_button_1.pack(side=tk.LEFT)
+
+        self.chat_button_2 = tk.Button(self.button_frame, text="+", command=self.create_new_chat)
+        self.chat_button_2.pack(side=tk.RIGHT)
+        self.chat_button_2.config(state=tk.DISABLED)
+
+        # frame for chats
+        self.chat_frame = tk.Frame(self.left_frame)
+        self.chat_frame.pack(side = tk.TOP)
+
+        self.toggle_chats("SERVER")
+
+        # message entry
+        self.below_chat_frame = tk.Frame(self.left_frame)
+        self.below_chat_frame.pack(side = tk.TOP)
+
+        self.entry_field = tk.Entry(self.below_chat_frame, width=40)
+        self.entry_field.pack(padx=10, pady=10)
+        self.entry_field.bind("<Return>", self.send_message)
+        self.entry_field.config(state=tk.DISABLED)
+
+        self.register_button = tk.Button(self.below_chat_frame, text="Register", command=self.register_user)
         self.register_button.pack(pady=5)
 
-        self.login_button = tk.Button(self.root, text="Login", command=self.login_user)
+        self.login_button = tk.Button(self.below_chat_frame, text="Login", command=self.login_user)
         self.login_button.pack(pady=5)
 
-        self.exit_button = tk.Button(self.root, text="Exit", command=self.exit_app)
+        self.exit_button = tk.Button(self.below_chat_frame, text="Exit", command=self.exit_app)
         self.exit_button.pack(pady=5)
 
         # login + password
-        self.login_field = tk.Entry(self.root, width=40)
+        self.login_field = tk.Entry(self.below_chat_frame, width=40)
         self.login_field.pack(padx=10, pady=5)
         self.login_field.insert(0, "Enter Username")
 
-        self.password_field = tk.Entry(self.root, width=40, show="*")
+        self.password_field = tk.Entry(self.below_chat_frame, width=40, show="*")
         self.password_field.pack(padx=10, pady=5)
         self.password_field.insert(0, "xxxxxxxxxx")
 
         self.socket = None
-        self.logged_in = False  
+        self.logged_in = False
+
+
+        # connect to server automatically
+        if (self.connect_to_server() == False):
+            self.exit_app()
 
     def connect_to_server(self):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.socket.connect((HOST, PORT))
             self.append_to_chat("connected to server at {}:{}".format(HOST, PORT))
+            return True
 
         except Exception as e:
             self.append_to_chat("error connecting to server: " + str(e))
+            return False
 
     def register_user(self):
-        login = self.login_field.get().strip()
-        password = self.password_field.get().strip()
+        login = self.login_field.get().strip().replace(" ", "_")
+        password = self.password_field.get().strip().replace(" ", "_")
 
         if login and password:
             message = f"REGISTER {login} {password}"
@@ -121,8 +130,8 @@ class SocketClientApp:
             self.append_to_chat("Please enter a username and password.")
 
     def login_user(self):
-        login = self.login_field.get().strip()
-        password = self.password_field.get().strip()
+        login = self.login_field.get().strip().replace(" ", "_")
+        password = self.password_field.get().strip().replace(" ", "_")
 
         if login and password:
             message = f"LOGIN {login} {password}"
@@ -145,7 +154,7 @@ class SocketClientApp:
                         self.toggle_chats(chatroom)
 
                         chat_button = tk.Button(
-                            self.top_frame, text=chatroom,
+                            self.button_frame, text=chatroom,
                             command=lambda cr=chatroom: self.toggle_chats(cr)
                         )
                         chat_button.pack(side=tk.LEFT)
@@ -238,8 +247,6 @@ class SocketClientApp:
             except Exception as e:
                 self.root.after(0, lambda: self.append_to_chat(f"Error receiving message: {str(e)}"))
                 break
-
-
    
     def get_active_users(self):
         if self.socket:
@@ -253,7 +260,6 @@ class SocketClientApp:
         except Exception as e:
             self.append_to_chat(f"Error retrieving active users: {str(e)}")
 
-   
     def show_active_users(self, users):
         self.active_users_listbox.delete(0, tk.END)  # clearing to refresh
         active_users_list = users.split()
@@ -290,7 +296,7 @@ class SocketClientApp:
         if chat_name:
             self.toggle_chats(chat_name)
 
-            new_chat_button = tk.Button(self.top_frame, text=chat_name, command=lambda: self.toggle_chats(chat_name))
+            new_chat_button = tk.Button(self.button_frame, text=chat_name, command=lambda: self.toggle_chats(chat_name))
             new_chat_button.pack(side=tk.LEFT)
 
             msg = f"JOIN {chat_name}"
@@ -308,6 +314,8 @@ class SocketClientApp:
         if self.socket:
             self.socket.close()
         self.root.quit()
+
+
 
 def run_app():
     root = tk.Tk()
