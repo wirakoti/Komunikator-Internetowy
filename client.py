@@ -40,8 +40,8 @@ class SocketClientApp:
         self.friends_listbox = tk.Listbox(self.friends_frame, width=30, height=10)
         self.friends_listbox.pack()
 
-        self.active_users_button = tk.Button(self.active_users_frame, text="Active Users", command=self.get_active_users)
-        self.active_users_button.pack(pady=5)
+        # self.active_users_button = tk.Button(self.active_users_frame, text="Active Users", command=self.get_active_users)
+        # self.active_users_button.pack(pady=5)
 
         self.friend_button = tk.Button(self.friends_frame, text="Add Friend", command=self.add_friend)
         self.friend_button.pack(pady=5)
@@ -54,6 +54,9 @@ class SocketClientApp:
         # buttons for chats
         self.chat_frames = {}
         self.current_chat = None
+
+        # active users on chats
+        self.active_users = {}
 
         self.button_frame = tk.Frame(self.left_frame)
         self.button_frame.pack(side=tk.TOP)
@@ -70,6 +73,9 @@ class SocketClientApp:
         self.chat_frame.pack(side = tk.TOP)
 
         self.toggle_chats("SERVER")
+
+
+
 
         # message entry
         self.below_chat_frame = tk.Frame(self.left_frame)
@@ -101,10 +107,12 @@ class SocketClientApp:
         self.socket = None
         self.logged_in = False
 
-
         # connect to server automatically
-        if (self.connect_to_server() == False):
+        if not self.connect_to_server():
             self.exit_app()
+
+
+
 
     def connect_to_server(self):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -137,8 +145,11 @@ class SocketClientApp:
             message = f"LOGIN {login} {password}"
             self.socket.send(message.encode('utf-8'))
             data = self.socket.recv(1024)
+
+
             response = data.decode('utf-8')
             self.append_to_chat(f"[server]: {response}")
+
 
             if response.startswith("login successful:"):
                 self.logged_in = True
@@ -149,6 +160,7 @@ class SocketClientApp:
                 self.password_field.pack_forget()
 
                 chatrooms = response.split(":")[1].strip().split()
+
                 for chatroom in chatrooms:
                     if chatroom not in self.chat_frames:
                         self.toggle_chats(chatroom)
@@ -159,7 +171,14 @@ class SocketClientApp:
                         )
                         chat_button.pack(side=tk.LEFT)
 
-                threading.Thread(target=self.receive_message, daemon=True).start()
+                    if chatroom != "SERVER":
+                        self.socket.send(f"ACTIVE_USERS {chatroom}".encode("utf-8"))
+                        active_users_response = self.socket.recv(1024).decode("utf-8")
+                        chat_name, users = active_users_response[12:].split(maxsplit=1)
+                        self.active_users[chat_name] = users.split()
+
+                    threading.Thread(target=self.receive_message, daemon=True).start()
+
             else:
                 self.append_to_chat("Login failed. Please check your credentials.")
         else:
@@ -185,11 +204,12 @@ class SocketClientApp:
         self.entry_field.delete(0, tk.END)
 
     def add_friend(self):
-        username1 = self.login_field.get().strip()  
-        username2 = self.friend_field.get().strip()  
+        username1 = self.login_field.get().strip().replace(" ", "_")
+        username2 = self.friend_field.get().strip().replace(" ", "_")
 
         if username2:  
-            if username1 == username2:  
+            if username1 == username2:
+                self.toggle_chats("SERVER")
                 self.append_to_chat("You cannot be your own friend...")
                 return
 
@@ -210,7 +230,7 @@ class SocketClientApp:
             self.append_to_chat("You are not connected to the server.")
 
     def fetch_friends(self):
-        username = self.login_field.get().strip() 
+        username = self.login_field.get().strip().replace(" ", "_")
         try:
             
             mess = f"OK {username}"  
@@ -228,13 +248,34 @@ class SocketClientApp:
         while True:
             try:
                 data = self.socket.recv(1024).decode("utf-8")
+                print(data)
                 if data:
-                    if data.startswith("ACTIVE_USERS:"):
-                        active_users = data[len("ACTIVE_USERS:"):].strip()
-                        self.root.after(0, lambda: self.show_active_users(active_users))
+                    # TODO: zablokować możliwość wpisywanie JOIN, ACTIVE_USERS, FRIENDS_LIST, LOGIN, REGISTER
+                    # jako login
+
+                    if data.startswith("ACTIVE_USERS"):
+                        chat_name, users = data[12:].split(maxsplit = 1)
+                        self.active_users[chat_name] = users.split()
+
                     elif data.startswith("FRIENDS_LIST:"):
                         friends_list = data[len("FRIENDS_LIST:"):].strip()
                         self.root.after(0, lambda: self.get_friends(friends_list))
+                    elif data.startswith("JOIN"):
+                        chat_name, user = data[4:].split(maxsplit = 1)
+
+                        fmsg = f"{user} has joined."
+                        self.active_users[chat_name].append(user)
+                        self.root.after(0, lambda: self.append_to_chat(fmsg, chat_name))
+                        self.root.after(0, lambda: self.show_active_users(self.active_users[chat_name]))
+
+                    elif data.startswith("LOGOUT"):
+                        chat_name, user = data[6:].split(maxsplit = 1)
+
+                        fmsg = f"{user} has logged out."
+                        self.active_users[chat_name].remove(user)
+                        self.root.after(0, lambda: self.append_to_chat(fmsg, chat_name))
+                        self.root.after(0, lambda: self.show_active_users(self.active_users[chat_name]))
+
                     else:
                         parts = data.split(maxsplit=2)
                         if len(parts) == 3:
@@ -247,23 +288,10 @@ class SocketClientApp:
             except Exception as e:
                 self.root.after(0, lambda: self.append_to_chat(f"Error receiving message: {str(e)}"))
                 break
-   
-    def get_active_users(self):
-        if self.socket:
-            threading.Thread(target=self.fetch_active_users, daemon=True).start()
-        else:
-            self.append_to_chat("You are not connected to the server.")
-
-    def fetch_active_users(self):
-        try:
-            self.socket.send("GET_ACTIVE_USERS".encode("utf-8"))
-        except Exception as e:
-            self.append_to_chat(f"Error retrieving active users: {str(e)}")
 
     def show_active_users(self, users):
         self.active_users_listbox.delete(0, tk.END)  # clearing to refresh
-        active_users_list = users.split()
-        for user in active_users_list:
+        for user in users:
             self.active_users_listbox.insert(tk.END, user)
 
     def toggle_login_register_controls(self, enable):
@@ -280,8 +308,12 @@ class SocketClientApp:
             frame.pack(padx=10, pady=0)
             frame.config(state=tk.DISABLED)
             self.chat_frames[name] = frame
+            if name != "SERVER":
+                self.active_users[name] = []
 
         self.show_chat(name)
+        if name != "SERVER":
+            self.show_active_users(self.active_users[name])
 
     def show_chat(self, chat_name):
         if self.current_chat:
@@ -299,8 +331,8 @@ class SocketClientApp:
             new_chat_button = tk.Button(self.button_frame, text=chat_name, command=lambda: self.toggle_chats(chat_name))
             new_chat_button.pack(side=tk.LEFT)
 
-            msg = f"JOIN {chat_name}"
-            self.socket.send(bytes(msg, "utf-8"))
+            self.socket.send(bytes(f"JOIN {chat_name}", "utf-8"))
+            self.socket.send(f"ACTIVE_USERS {chat_name}".encode("utf-8"))
 
     def append_to_chat(self, text, chat_name = "SERVER"):
         chat_display = self.chat_frames[chat_name]
@@ -324,3 +356,5 @@ def run_app():
 
 if __name__ == "__main__":
     run_app()
+
+# TODO: for server - disconnect client when server terminates
