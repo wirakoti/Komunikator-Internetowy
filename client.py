@@ -248,7 +248,6 @@ class SocketClientApp:
         while True:
             try:
                 data = self.socket.recv(1024).decode("utf-8")
-                print(data)
                 if data:
                     # TODO: zablokować możliwość wpisywanie JOIN, ACTIVE_USERS, FRIENDS_LIST, LOGIN, REGISTER
                     # jako login
