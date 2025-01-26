@@ -212,7 +212,7 @@ void sendJoinMessageToAllClients(char *room, ClientData *client) {
 }
 
 void sendClientLogoutMessageToAllClients(ClientData *client)
-{   
+{  
     char formattedMsg[1024];
 
     sqlite3_stmt *stmt;
