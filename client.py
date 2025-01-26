@@ -7,7 +7,7 @@ from duplicity.asyncscheduler import thread
 from pydantic.dataclasses import dataclass
 
 HOST = "127.0.0.1"
-PORT = 1100  
+PORT = 1100 
 
 class SocketClientApp:
     def __init__(self, root):
@@ -28,9 +28,6 @@ class SocketClientApp:
         self.active_users_listbox = tk.Listbox(self.active_users_frame, width=30, height=10)
         self.active_users_listbox.pack()
 
-        self.button_show_friends = tk.Button(self.active_users_frame, text="Show Friends", command=self.show_friends)
-        self.button_show_friends.pack(pady=5)
-
         self.friends_frame = tk.Frame(self.active_users_frame)
         self.friends_frame.pack(fill=tk.Y, padx=10, pady=10)
 
@@ -42,6 +39,8 @@ class SocketClientApp:
 
         # self.active_users_button = tk.Button(self.active_users_frame, text="Active Users", command=self.get_active_users)
         # self.active_users_button.pack(pady=5)
+        self.button_show_friends = tk.Button(self.active_users_frame, text="Show Friends", command=self.show_friends)
+        self.button_show_friends.pack(pady=5)
 
         self.friend_button = tk.Button(self.friends_frame, text="Add Friend", command=self.add_friend)
         self.friend_button.pack(pady=5)
@@ -73,9 +72,6 @@ class SocketClientApp:
         self.chat_frame.pack(side = tk.TOP)
 
         self.toggle_chats("SERVER")
-
-
-
 
         # message entry
         self.below_chat_frame = tk.Frame(self.left_frame)
@@ -111,9 +107,6 @@ class SocketClientApp:
         if not self.connect_to_server():
             self.exit_app()
 
-
-
-
     def connect_to_server(self):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -124,9 +117,16 @@ class SocketClientApp:
         except Exception as e:
             self.append_to_chat("error connecting to server: " + str(e))
             return False
+    FORBIDDEN_USERNAMES={"JOIN", "ACTIVE_USERS", "FRIENDS_LIST", "LOGIN", "REGISTER", "OK"}
+
+    def is_keyword(self, username):
+        return any(username.upper().startswith(keyword) for keyword in FORBIDDEN_USERNAMES)
 
     def register_user(self):
         login = self.login_field.get().strip().replace(" ", "_")
+        if is_keyword(login):
+            self.append_to_chat("Username cannot start with: JOIN/ACTIVE_USERS/FRIENDS_LIST/LOGIN/REGISTER/OK")
+            return
         password = self.password_field.get().strip().replace(" ", "_")
 
         if login and password:
@@ -207,7 +207,7 @@ class SocketClientApp:
         username1 = self.login_field.get().strip().replace(" ", "_")
         username2 = self.friend_field.get().strip().replace(" ", "_")
 
-        if username2:  
+        if username2: 
             if username1 == username2:
                 self.toggle_chats("SERVER")
                 self.append_to_chat("You cannot be your own friend...")
@@ -232,8 +232,8 @@ class SocketClientApp:
     def fetch_friends(self):
         username = self.login_field.get().strip().replace(" ", "_")
         try:
-            
-            mess = f"OK {username}"  
+           
+            mess = f"OK {username}" 
             self.socket.send(mess.encode("utf-8"))
         except Exception as e:
             self.append_to_chat(f"Error retrieving friends: {str(e)}")
@@ -249,9 +249,6 @@ class SocketClientApp:
             try:
                 data = self.socket.recv(1024).decode("utf-8")
                 if data:
-                    # TODO: zablokować możliwość wpisywanie JOIN, ACTIVE_USERS, FRIENDS_LIST, LOGIN, REGISTER
-                    # jako login
-
                     if data.startswith("ACTIVE_USERS"):
                         chat_name, users = data[12:].split(maxsplit = 1)
                         self.active_users[chat_name] = users.split()
@@ -352,6 +349,7 @@ def run_app():
     root = tk.Tk()
     app = SocketClientApp(root)
     root.mainloop()
+
 
 if __name__ == "__main__":
     run_app()
