@@ -1,9 +1,8 @@
 import socket
 import tkinter as tk
 from tkinter import scrolledtext, simpledialog, Frame
-import threading
-
-#from duplicity.asyncscheduler import thread
+import _thread 
+from duplicity.asyncscheduler import thread
 from pydantic.dataclasses import dataclass
 
 HOST = "150.254.32.136"
@@ -190,7 +189,7 @@ class SocketClientApp:
                         chat_name, users = active_users_response[12:].split(maxsplit=1)
                         self.active_users[chat_name] = users.split()
 
-                    threading.Thread(target=self.receive_message, daemon=True).start()
+                    _thread.start_new_thread(self.receive_message, ())
 
             else:
                 self.append_to_chat("Login failed. Please check your credentials.")
@@ -238,7 +237,7 @@ class SocketClientApp:
 
     def show_friends(self):
         if self.socket:
-            threading.Thread(target=self.fetch_friends, daemon=True).start()
+            _thread.start_new_thread(self.fetch_friends, ())
         else:
             self.append_to_chat("You are not connected to the server.")
 
