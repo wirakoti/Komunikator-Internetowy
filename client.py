@@ -3,10 +3,10 @@ import tkinter as tk
 from tkinter import scrolledtext, simpledialog, Frame
 import threading
 
-from duplicity.asyncscheduler import thread
+#from duplicity.asyncscheduler import thread
 from pydantic.dataclasses import dataclass
 
-HOST = "127.0.0.1"
+HOST = "150.254.32.136"
 PORT = 1100 
 
 class SocketClientApp:
@@ -73,6 +73,9 @@ class SocketClientApp:
 
         self.toggle_chats("SERVER")
 
+
+
+
         # message entry
         self.below_chat_frame = tk.Frame(self.left_frame)
         self.below_chat_frame.pack(side = tk.TOP)
@@ -92,13 +95,20 @@ class SocketClientApp:
         self.exit_button.pack(pady=5)
 
         # login + password
+
+        self.login_label = tk.Label(self.below_chat_frame, text="Username")
+        self.login_label.pack(padx=10,pady=(10,0))
+
         self.login_field = tk.Entry(self.below_chat_frame, width=40)
         self.login_field.pack(padx=10, pady=5)
-        self.login_field.insert(0, "Enter Username")
+        #self.login_field.insert(0, "Enter Username")
+
+        self.password_label = tk.Label(self.below_chat_frame, text="Password")
+        self.password_label.pack(padx=10,pady=(10,0))
 
         self.password_field = tk.Entry(self.below_chat_frame, width=40, show="*")
         self.password_field.pack(padx=10, pady=5)
-        self.password_field.insert(0, "xxxxxxxxxx")
+        #self.password_field.insert(0, "xxxxxxxxxx")
 
         self.socket = None
         self.logged_in = False
@@ -117,15 +127,15 @@ class SocketClientApp:
         except Exception as e:
             self.append_to_chat("error connecting to server: " + str(e))
             return False
-    FORBIDDEN_USERNAMES={"JOIN", "ACTIVE_USERS", "FRIENDS_LIST", "LOGIN", "REGISTER", "OK"}
+    
 
     def is_keyword(self, username):
-        return any(username.upper().startswith(keyword) for keyword in FORBIDDEN_USERNAMES)
+        return any(username.upper().startswith(keyword) for keyword in {"JOIN", "ACTIVE_USERS", "FRIENDS_LIST", "LOGIN", "REGISTER", "OK"})
 
     def register_user(self):
         login = self.login_field.get().strip().replace(" ", "_")
-        if is_keyword(login):
-            self.append_to_chat("Username cannot start with: JOIN/ACTIVE_USERS/FRIENDS_LIST/LOGIN/REGISTER/OK")
+        if self.is_keyword(login):
+            self.append_to_chat("Error: Username cannot start with: JOIN/ACTIVE_USERS/FRIENDS_LIST/LOGIN/REGISTER/OK")
             return
         password = self.password_field.get().strip().replace(" ", "_")
 
@@ -158,6 +168,9 @@ class SocketClientApp:
                 self.chat_button_2.config(state=tk.NORMAL)
                 self.login_field.pack_forget()
                 self.password_field.pack_forget()
+                self.login_label.pack_forget()
+                self.password_label.pack_forget()
+
 
                 chatrooms = response.split(":")[1].strip().split()
 
@@ -249,6 +262,9 @@ class SocketClientApp:
             try:
                 data = self.socket.recv(1024).decode("utf-8")
                 if data:
+                    # TODO: zablokować możliwość wpisywanie JOIN, ACTIVE_USERS, FRIENDS_LIST, LOGIN, REGISTER
+                    # jako login
+
                     if data.startswith("ACTIVE_USERS"):
                         chat_name, users = data[12:].split(maxsplit = 1)
                         self.active_users[chat_name] = users.split()
@@ -353,5 +369,3 @@ def run_app():
 
 if __name__ == "__main__":
     run_app()
-
-# TODO: for server - disconnect client when server terminates
